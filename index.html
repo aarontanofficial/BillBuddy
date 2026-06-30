@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#4f46e5">
+<title>BillBuddy</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="data:,">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="BillBuddy">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="offlineBadge" class="offline-badge hidden">Offline — changes will sync later</div>
+
+<div id="authScreen" class="screen">
+  <div class="auth-card">
+    <h1 class="logo">BillBuddy</h1>
+    <p class="tagline">Never miss a bill again</p>
+
+    <div id="authForms">
+      <div class="tabs">
+        <button class="tab-btn active" data-tab="login">Log In</button>
+        <button class="tab-btn" data-tab="signup">Sign Up</button>
+      </div>
+
+      <form id="loginForm" class="auth-form active">
+        <input type="email" id="loginEmail" placeholder="Email" required autocomplete="email">
+        <input type="password" id="loginPassword" placeholder="Password" required autocomplete="current-password">
+        <button type="submit" class="btn-primary">Log In</button>
+      </form>
+
+      <form id="signupForm" class="auth-form">
+        <input type="text" id="signupName" placeholder="Your Name" required autocomplete="name">
+        <input type="email" id="signupEmail" placeholder="Email" required autocomplete="email">
+        <input type="password" id="signupPassword" placeholder="Password (min 6 chars)" required minlength="6" autocomplete="new-password">
+        <button type="submit" class="btn-primary">Sign Up</button>
+      </form>
+    </div>
+    <p id="authError" class="error-text hidden"></p>
+  </div>
+</div>
+
+<div id="householdScreen" class="screen hidden">
+  <div class="auth-card">
+    <h1 class="logo">BillBuddy</h1>
+    <p class="tagline">Join or create a household</p>
+
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="join">Join</button>
+      <button class="tab-btn" data-tab="create">Create</button>
+    </div>
+
+    <form id="joinHouseholdForm" class="auth-form active">
+      <input type="text" id="joinCode" placeholder="Household Code" required maxlength="6" autocomplete="off" style="text-transform:uppercase">
+      <button type="submit" class="btn-primary">Join Household</button>
+    </form>
+
+    <form id="createHouseholdForm" class="auth-form">
+      <input type="text" id="householdName" placeholder="Household Name" required autocomplete="off">
+      <button type="submit" class="btn-primary">Create Household</button>
+    </form>
+
+    <p id="householdError" class="error-text hidden"></p>
+    <button id="signOutBtnHousehold" class="btn-text">Sign Out</button>
+  </div>
+</div>
+
+<div id="appScreen" class="screen hidden">
+  <header class="topbar">
+    <div class="topbar-left">
+      <h1 class="app-title">BillBuddy</h1>
+      <span id="householdNameDisplay" class="household-name"></span>
+    </div>
+    <div class="topbar-right">
+      <button id="codeBtn" class="icon-btn" title="Household Code">🔑</button>
+      <button id="signOutBtn" class="icon-btn" title="Sign Out">⎋</button>
+    </div>
+  </header>
+
+  <main class="main-content">
+    <section class="dashboard">
+      <div class="stat-card">
+        <span class="stat-value" id="statTotal">0</span>
+        <span class="stat-label">Total Bills</span>
+      </div>
+      <div class="stat-card upcoming">
+        <span class="stat-value" id="statUpcoming">0</span>
+        <span class="stat-label">Upcoming</span>
+      </div>
+      <div class="stat-card overdue">
+        <span class="stat-value" id="statOverdue">0</span>
+        <span class="stat-label">Overdue</span>
+      </div>
+      <div class="stat-card paid">
+        <span class="stat-value" id="statPaid">0</span>
+        <span class="stat-label">Paid</span>
+      </div>
+      <div class="stat-card expense full-width">
+        <span class="stat-value" id="statExpense">$0.00</span>
+        <span class="stat-label">Total Monthly Expenses</span>
+      </div>
+    </section>
+
+    <section class="filters">
+      <button class="filter-btn active" data-filter="all">All</button>
+      <button class="filter-btn" data-filter="pending">Pending</button>
+      <button class="filter-btn" data-filter="overdue">Overdue</button>
+      <button class="filter-btn" data-filter="paid">Paid</button>
+    </section>
+
+    <section id="billsList" class="bills-list">
+      <p class="empty-state" id="emptyState">No bills yet. Tap + to add your first bill.</p>
+    </section>
+  </main>
+
+  <button id="addBillFab" class="fab">+</button>
+</div>
+
+<div id="billModal" class="modal-overlay hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 id="modalTitle">Add Bill</h2>
+      <button id="closeModalBtn" class="icon-btn">✕</button>
+    </div>
+    <form id="billForm" class="modal-form">
+      <input type="hidden" id="billId">
+      <label>Bill Name</label>
+      <input type="text" id="billName" placeholder="e.g. Electricity" required>
+
+      <label>Amount</label>
+      <input type="number" id="billAmount" placeholder="0.00" step="0.01" min="0" required>
+
+      <label>Due Date</label>
+      <input type="date" id="billDueDate" required>
+
+      <label>Category</label>
+      <select id="billCategory">
+        <option value="Utilities">Utilities</option>
+        <option value="Rent/Mortgage">Rent/Mortgage</option>
+        <option value="Internet">Internet</option>
+        <option value="Insurance">Insurance</option>
+        <option value="Subscription">Subscription</option>
+        <option value="Credit Card">Credit Card</option>
+        <option value="Loan">Loan</option>
+        <option value="Other">Other</option>
+      </select>
+
+      <label class="checkbox-row">
+        <input type="checkbox" id="billRecurring">
+        <span>Monthly Recurring</span>
+      </label>
+
+      <label>Notes</label>
+      <textarea id="billNotes" placeholder="Optional notes"></textarea>
+
+      <div class="modal-actions">
+        <button type="button" id="deleteBillBtn" class="btn-danger hidden">Delete</button>
+        <button type="submit" class="btn-primary">Save Bill</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="codeModal" class="modal-overlay hidden">
+  <div class="modal small">
+    <div class="modal-header">
+      <h2>Household Code</h2>
+      <button id="closeCodeModalBtn" class="icon-btn">✕</button>
+    </div>
+    <div class="code-display">
+      <span id="codeValue"></span>
+    </div>
+    <p class="code-hint">Share this code with family members so they can join your household.</p>
+    <button id="copyCodeBtn" class="btn-primary">Copy Code</button>
+  </div>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js"></script>
+<script src="firebase.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
