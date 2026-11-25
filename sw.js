@@ -59,8 +59,6 @@ self.addEventListener('push', event => {
   const notification = payload.notification || payload;
   event.waitUntil(self.registration.showNotification(notification.title || 'BillBuddy', {
     body: notification.body || '',
-    icon: './icons/icon-192.png',
-    badge: './icons/icon-192.png',
     data: { url: notification.click_action || './' }
   }));
 });
