@@ -1,554 +1,61 @@
-let currentUser = null;
-let currentHouseholdId = null;
-let currentHouseholdData = null;
-let billsUnsubscribe = null;
-let allBills = [];
-let activeFilter = 'all';
-let editingBillId = null;
-
-const screens = {
-  auth: document.getElementById('authScreen'),
-  household: document.getElementById('householdScreen'),
-  app: document.getElementById('appScreen')
-};
-
-function showScreen(name) {
-  Object.values(screens).forEach(s => s.classList.add('hidden'));
-  screens[name].classList.remove('hidden');
-}
-
-function showToast(message, duration = 3000) {
-  const toast = document.getElementById('toast');
-  toast.textContent = message;
-  toast.classList.remove('hidden');
-  clearTimeout(toast._timer);
-  toast._timer = setTimeout(() => toast.classList.add('hidden'), duration);
-}
-
-function setupTabs(container) {
-  const tabBtns = container.querySelectorAll('.tab-btn');
-  tabBtns.forEach(btn => {
-    btn.addEventListener('click', () => {
-      tabBtns.forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      const target = btn.dataset.tab;
-      container.querySelectorAll('.auth-form').forEach(form => {
-        form.classList.toggle('active', form.id.toLowerCase().includes(target));
-      });
-    });
-  });
-}
-
-setupTabs(document.getElementById('authScreen'));
-setupTabs(document.getElementById('householdScreen'));
-
-document.getElementById('loginForm').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const email = document.getElementById('loginEmail').value.trim();
-  const password = document.getElementById('loginPassword').value;
-  hideAuthError();
-  try {
-    await auth.signInWithEmailAndPassword(email, password);
-  } catch (err) {
-    showAuthError(err.message);
-  }
-});
-
-document.getElementById('signupForm').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const name = document.getElementById('signupName').value.trim();
-  const email = document.getElementById('signupEmail').value.trim();
-  const password = document.getElementById('signupPassword').value;
-  hideAuthError();
-  try {
-    const cred = await auth.createUserWithEmailAndPassword(email, password);
-    await db.collection('users').doc(cred.user.uid).set({
-      name,
-      email,
-      householdId: null,
-      createdAt: firebase.firestore.FieldValue.serverTimestamp()
-    });
-  } catch (err) {
-    showAuthError(err.message);
-  }
-});
-
-function showAuthError(msg) {
-  const el = document.getElementById('authError');
-  el.textContent = msg;
-  el.classList.remove('hidden');
-}
-
-function hideAuthError() {
-  document.getElementById('authError').classList.add('hidden');
-}
-
-function showHouseholdError(msg) {
-  const el = document.getElementById('householdError');
-  el.textContent = msg;
-  el.classList.remove('hidden');
-}
-
-function hideHouseholdError() {
-  document.getElementById('householdError').classList.add('hidden');
-}
-
-document.getElementById('signOutBtnHousehold').addEventListener('click', () => auth.signOut());
-document.getElementById('signOutBtn').addEventListener('click', () => auth.signOut());
-
-function generateHouseholdCode() {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  let code = '';
-  for (let i = 0; i < 6; i++) {
-    code += chars[Math.floor(Math.random() * chars.length)];
-  }
-  return code;
-}
-
-document.getElementById('createHouseholdForm').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  hideHouseholdError();
-  const name = document.getElementById('householdName').value.trim();
-  const code = generateHouseholdCode();
-  try {
-    const householdRef = await db.collection('households').add({
-      name,
-      code,
-      ownerId: currentUser.uid,
-      memberIds: [currentUser.uid],
-      createdAt: firebase.firestore.FieldValue.serverTimestamp()
-    });
-    await db.collection('users').doc(currentUser.uid).update({ householdId: householdRef.id });
-    currentHouseholdId = householdRef.id;
-    await loadHousehold();
-  } catch (err) {
-    showHouseholdError(err.message);
-  }
-});
-
-document.getElementById('joinHouseholdForm').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  hideHouseholdError();
-  const code = document.getElementById('joinCode').value.trim().toUpperCase();
-  try {
-    const snap = await db.collection('households').where('code', '==', code).limit(1).get();
-    if (snap.empty) {
-      showHouseholdError('No household found with that code.');
-      return;
-    }
-    const doc = snap.docs[0];
-    await doc.ref.update({
-      memberIds: firebase.firestore.FieldValue.arrayUnion(currentUser.uid)
-    });
-    await db.collection('users').doc(currentUser.uid).update({ householdId: doc.id });
-    currentHouseholdId = doc.id;
-    await loadHousehold();
-  } catch (err) {
-    showHouseholdError(err.message);
-  }
-});
-
-document.getElementById('codeBtn').addEventListener('click', () => {
-  document.getElementById('codeValue').textContent = currentHouseholdData.code;
-  document.getElementById('codeModal').classList.remove('hidden');
-});
-
-document.getElementById('closeCodeModalBtn').addEventListener('click', () => {
-  document.getElementById('codeModal').classList.add('hidden');
-});
-
-document.getElementById('copyCodeBtn').addEventListener('click', async () => {
-  try {
-    await navigator.clipboard.writeText(currentHouseholdData.code);
-    showToast('Code copied to clipboard');
-  } catch (e) {
-    showToast('Could not copy code');
-  }
-});
-
-async function loadHousehold() {
-  const doc = await db.collection('households').doc(currentHouseholdId).get();
-  currentHouseholdData = doc.data();
-  document.getElementById('householdNameDisplay').textContent = currentHouseholdData.name;
-  showScreen('app');
-  listenToBills();
-  requestNotificationPermission();
-}
-
-function listenToBills() {
-  if (billsUnsubscribe) billsUnsubscribe();
-  billsUnsubscribe = db.collection('households').doc(currentHouseholdId)
-    .collection('bills')
-    .orderBy('dueDate')
-    .onSnapshot((snapshot) => {
-      allBills = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-      updateBillStatuses();
-      renderBills();
-      renderDashboard();
-      checkReminders();
-    }, (err) => {
-      console.error('Bills listener error', err);
-    });
-}
-
-// Work with calendar dates in the device's local timezone. Avoid UTC ISO
-// conversion, which can shift Philippine dates to the previous day.
-function todayISO() {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
-
-function parseLocalDate(dateStr) {
-  const [year, month, day] = String(dateStr || '').split('-').map(Number);
-  if (!year || !month || !day) return null;
-  return new Date(year, month - 1, day, 12, 0, 0, 0);
-}
-
-function daysBetween(dateStr) {
-  const today = parseLocalDate(todayISO());
-  const due = parseLocalDate(dateStr);
-  if (!today || !due) return 0;
-  return Math.round((due - today) / 86400000);
-}
-
-function addMonthsClamped(dateStr, months = 1, preferredDay = null) {
-  const source = parseLocalDate(dateStr) || parseLocalDate(todayISO());
-  const desiredDay = Number(preferredDay) || source.getDate();
-  const targetMonth = source.getMonth() + months;
-  const target = new Date(source.getFullYear(), targetMonth, 1, 12);
-  const lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
-  target.setDate(Math.min(desiredDay, lastDay));
-  return `${target.getFullYear()}-${String(target.getMonth() + 1).padStart(2, '0')}-${String(target.getDate()).padStart(2, '0')}`;
-}
-
-const moneyFormatter = new Intl.NumberFormat('en-PH', {
-  style: 'currency', currency: 'PHP', minimumFractionDigits: 2
-});
-function formatMoney(value) {
-  return moneyFormatter.format(Number(value || 0));
-}
-
-function updateBillStatuses() {
-  allBills.forEach(bill => {
-    if (bill.status !== 'paid') {
-      const diff = daysBetween(bill.dueDate);
-      bill.status = diff < 0 ? 'overdue' : 'pending';
-    }
-  });
-}
-
-function renderDashboard() {
-  const total = allBills.length;
-  const upcoming = allBills.filter(b => b.status === 'pending').length;
-  const overdue = allBills.filter(b => b.status === 'overdue').length;
-  const paid = allBills.filter(b => b.status === 'paid').length;
-  const monthKey = todayISO().slice(0, 7);
-  const expense = allBills
-    .filter(b => String(b.dueDate || '').slice(0, 7) === monthKey)
-    .reduce((sum, b) => sum + Number(b.amount || 0), 0);
-
-  document.getElementById('statTotal').textContent = total;
-  document.getElementById('statUpcoming').textContent = upcoming;
-  document.getElementById('statOverdue').textContent = overdue;
-  document.getElementById('statPaid').textContent = paid;
-  document.getElementById('statExpense').textContent = formatMoney(expense);
-}
-
-function formatDate(dateStr) {
-  const d = new Date(dateStr);
-  return d.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
-}
-
-function dueLabel(bill) {
-  if (bill.status === 'paid') return `Paid`;
-  const diff = daysBetween(bill.dueDate);
-  if (diff === 0) return 'Due today';
-  if (diff < 0) return `${Math.abs(diff)}d overdue`;
-  return `Due in ${diff}d`;
-}
-
-function renderBills() {
-  const list = document.getElementById('billsList');
-  const emptyState = document.getElementById('emptyState');
-  let filtered = allBills;
-  if (activeFilter !== 'all') {
-    filtered = allBills.filter(b => b.status === activeFilter);
-  }
-
-  list.querySelectorAll('.bill-card').forEach(el => el.remove());
-
-  if (filtered.length === 0) {
-    emptyState.classList.remove('hidden');
-    emptyState.textContent = activeFilter === 'all'
-      ? 'No bills yet. Tap + to add your first bill.'
-      : `No ${activeFilter} bills.`;
-    return;
-  }
-  emptyState.classList.add('hidden');
-
-  filtered.forEach((bill, index) => {
-    const card = document.createElement('div');
-    card.className = `bill-card status-${bill.status}`;
-    card.style.setProperty('--stagger-index', Math.min(index, 8));
-    card.innerHTML = `
-      <div class="bill-card-top">
-        <div>
-          <div class="bill-name">${escapeHtml(bill.name)}</div>
-          <div class="bill-category">${escapeHtml(bill.category)}</div>
-        </div>
-        <div class="bill-amount">${formatMoney(bill.amount)}</div>
-      </div>
-      <div class="bill-card-mid">
-        <span>${formatDate(bill.dueDate)} · ${dueLabel(bill)}</span>
-        <span class="badge ${bill.status}">${bill.status}</span>
-      </div>
-      ${bill.recurring ? '<div class="recurring-tag">🔁 Monthly Recurring</div>' : ''}
-      ${bill.notes ? `<div class="bill-notes">${escapeHtml(bill.notes)}</div>` : ''}
-      <div class="bill-card-actions">
-        ${bill.status !== 'paid' ? `<button class="bill-btn pay" data-id="${bill.id}">Mark Paid</button>` : ''}
-        <button class="bill-btn edit" data-id="${bill.id}">Edit</button>
-      </div>
-    `;
-    list.appendChild(card);
-  });
-
-  list.querySelectorAll('.bill-btn.pay').forEach(btn => {
-    btn.addEventListener('click', () => markPaid(btn.dataset.id));
-  });
-  list.querySelectorAll('.bill-btn.edit').forEach(btn => {
-    btn.addEventListener('click', () => openEditModal(btn.dataset.id));
-  });
-}
-
-function escapeHtml(str) {
-  const div = document.createElement('div');
-  div.textContent = str || '';
-  return div.innerHTML;
-}
-
-document.querySelectorAll('.filter-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    activeFilter = btn.dataset.filter;
-    renderBills();
-  });
-});
-
-async function markPaid(billId) {
-  const bill = allBills.find(b => b.id === billId);
-  if (!bill) return;
-  const billRef = db.collection('households').doc(currentHouseholdId).collection('bills').doc(billId);
-  await billRef.update({
-    status: 'paid',
-    paidAt: firebase.firestore.FieldValue.serverTimestamp()
-  });
-
-  if (bill.recurring) {
-    const recurringDay = Number(bill.recurringDay) || (parseLocalDate(bill.dueDate) || new Date()).getDate();
-    const nextDate = addMonthsClamped(bill.dueDate, 1, recurringDay);
-    await db.collection('households').doc(currentHouseholdId).collection('bills').add({
-      name: bill.name,
-      amount: bill.amount,
-      dueDate: nextDate,
-      category: bill.category,
-      recurring: true,
-      recurringDay,
-      notes: bill.notes || '',
-      status: 'pending',
-      createdBy: currentUser.uid,
-      createdAt: firebase.firestore.FieldValue.serverTimestamp()
-    });
-    showToast(`${bill.name} paid. Next bill created for ${formatDate(nextDate)}.`);
-  } else {
-    showToast(`${bill.name} marked as paid.`);
-  }
-}
-
-const billModal = document.getElementById('billModal');
-const billForm = document.getElementById('billForm');
-
-document.getElementById('addBillFab').addEventListener('click', () => openAddModal());
-document.getElementById('closeModalBtn').addEventListener('click', closeModal);
-
-function openAddModal() {
-  editingBillId = null;
-  billForm.reset();
-  document.getElementById('modalTitle').textContent = 'Add Bill';
-  document.getElementById('deleteBillBtn').classList.add('hidden');
-  document.getElementById('billDueDate').value = todayISO();
-  billModal.classList.remove('hidden');
-}
-
-function openEditModal(billId) {
-  const bill = allBills.find(b => b.id === billId);
-  if (!bill) return;
-  editingBillId = billId;
-  document.getElementById('modalTitle').textContent = 'Edit Bill';
-  document.getElementById('billName').value = bill.name;
-  document.getElementById('billAmount').value = bill.amount;
-  document.getElementById('billDueDate').value = bill.dueDate;
-  document.getElementById('billCategory').value = bill.category;
-  document.getElementById('billRecurring').checked = !!bill.recurring;
-  document.getElementById('billNotes').value = bill.notes || '';
-  document.getElementById('deleteBillBtn').classList.remove('hidden');
-  billModal.classList.remove('hidden');
-}
-
-function closeModal() {
-  billModal.classList.add('hidden');
-  editingBillId = null;
-}
-
-billModal.addEventListener('click', (e) => {
-  if (e.target === billModal) closeModal();
-});
-
-billForm.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const data = {
-    name: document.getElementById('billName').value.trim(),
-    amount: parseFloat(document.getElementById('billAmount').value),
-    dueDate: document.getElementById('billDueDate').value,
-    category: document.getElementById('billCategory').value,
-    recurring: document.getElementById('billRecurring').checked,
-    recurringDay: document.getElementById('billRecurring').checked ? (editingBillId ? (allBills.find(b => b.id === editingBillId)?.recurringDay || (parseLocalDate(document.getElementById('billDueDate').value) || new Date()).getDate()) : (parseLocalDate(document.getElementById('billDueDate').value) || new Date()).getDate()) : null,
-    notes: document.getElementById('billNotes').value.trim()
-  };
-
-  const billsRef = db.collection('households').doc(currentHouseholdId).collection('bills');
-
-  if (editingBillId) {
-    await billsRef.doc(editingBillId).update(data);
-    showToast('Bill updated.');
-  } else {
-    data.status = daysBetween(data.dueDate) < 0 ? 'overdue' : 'pending';
-    data.createdBy = currentUser.uid;
-    data.createdAt = firebase.firestore.FieldValue.serverTimestamp();
-    await billsRef.add(data);
-    showToast('Bill added.');
-  }
-  closeModal();
-});
-
-document.getElementById('deleteBillBtn').addEventListener('click', async () => {
-  if (!editingBillId) return;
-  if (!confirm('Delete this bill?')) return;
-  await db.collection('households').doc(currentHouseholdId).collection('bills').doc(editingBillId).delete();
-  showToast('Bill deleted.');
-  closeModal();
-});
-
-async function requestNotificationPermission() {
-  if (!('Notification' in window)) return;
-  if (Notification.permission === 'default') {
-    await Notification.requestPermission();
-  }
-}
-
-let lastReminderCheckDate = null;
-
-function checkReminders() {
-  const today = todayISO();
-  if (lastReminderCheckDate === today) return;
-  lastReminderCheckDate = today;
-
-  const dueSoon = [];
-  const overdue = [];
-
-  allBills.forEach(bill => {
-    if (bill.status === 'paid') return;
-    const diff = daysBetween(bill.dueDate);
-    if ([7, 3, 1, 0].includes(diff)) dueSoon.push({ bill, diff });
-    if (diff < 0) overdue.push(bill);
-  });
-
-  if (dueSoon.length === 0 && overdue.length === 0) return;
-
-  const canNotify = 'Notification' in window && Notification.permission === 'granted';
-
-  dueSoon.forEach(({ bill, diff }) => {
-    const text = diff === 0
-      ? `${bill.name} is due today (${formatMoney(bill.amount)})`
-      : `${bill.name} is due in ${diff} day${diff > 1 ? 's' : ''} (${formatMoney(bill.amount)})`;
-    if (canNotify) {
-      new Notification('BillBuddy Reminder', { body: text, icon: 'icons/icon-192.png' });
-    }
-  });
-
-  overdue.forEach(bill => {
-    const text = `${bill.name} is overdue (${formatMoney(bill.amount)})`;
-    if (canNotify) {
-      new Notification('BillBuddy Overdue', { body: text, icon: 'icons/icon-192.png' });
-    }
-  });
-
-  if (!canNotify) {
-    const count = dueSoon.length + overdue.length;
-    showToast(`📌 ${count} bill${count > 1 ? 's' : ''} need attention`, 5000);
-  }
-}
-
-function updateOfflineBadge() {
-  const badge = document.getElementById('offlineBadge');
-  badge.textContent = navigator.onLine ? '' : 'Offline — cached viewing only. Changes need an internet connection.';
-  badge.classList.toggle('hidden', navigator.onLine);
-}
-
-window.addEventListener('online', updateOfflineBadge);
-window.addEventListener('offline', updateOfflineBadge);
-updateOfflineBadge();
-
-if (typeof auth === 'undefined' || typeof db === 'undefined') {
-  showScreen('auth');
-  showAuthError('Firebase is not configured yet. The repository is missing firebase.js. Add your existing Firebase web configuration to restore sign-in and household data. Your saved cloud data has not been changed.');
-} else {
-  auth.onAuthStateChanged(async (user) => {
-    if (user) {
-      currentUser = user;
-      try {
-        const userDoc = await db.collection('users').doc(user.uid).get();
-        const userData = userDoc.data();
-        if (userData && userData.householdId) {
-          currentHouseholdId = userData.householdId;
-          await loadHousehold();
-        } else {
-          showScreen('household');
-        }
-      } catch (err) {
-        showScreen('auth');
-        showAuthError('Could not load your account. Check your internet connection and Firestore access, then try again.');
-        console.error('Account load failed', err);
-      }
-    } else {
-      currentUser = null;
-      currentHouseholdId = null;
-      currentHouseholdData = null;
-      if (billsUnsubscribe) {
-        billsUnsubscribe();
-        billsUnsubscribe = null;
-      }
-      showScreen('auth');
-    }
-  });
-}
-
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('sw.js').catch(err => {
-      console.error('Service worker registration failed', err);
-    });
-  });
-}
-
-setInterval(() => {
-  if (allBills.length) {
-    updateBillStatuses();
-    renderBills();
-    renderDashboard();
-    checkReminders();
-  }
-}, 60 * 60 * 1000);
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.119.2';
+const supabase=createClient('https://agninfkeebfpodcawtqu.supabase.co','sb_publishable_oc4DINFH-PtvBVij5Wojtg_Tec06XKf',{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
+let currentUser=null,currentHouseholdId=null,currentHouseholdData=null,billsChannel=null,allBills=[],activeFilter='all',editingBillId=null;
+const screens={auth:document.getElementById('authScreen'),household:document.getElementById('householdScreen'),app:document.getElementById('appScreen')};
+function showScreen(n){Object.values(screens).forEach(s=>s.classList.add('hidden'));screens[n].classList.remove('hidden')}
+function showToast(m,d=3000){const t=document.getElementById('toast');t.textContent=m;t.classList.remove('hidden');clearTimeout(t._timer);t._timer=setTimeout(()=>t.classList.add('hidden'),d)}
+function errText(e){let m=String(e?.message||e||'Something went wrong.');if(/Invalid login credentials/i.test(m))return'Email or password is incorrect.';if(/Email not confirmed/i.test(m))return'Please verify your email using the link we sent you.';if(/User already registered/i.test(m))return'An account with this email already exists. Please log in.';return m}
+function setupTabs(c){c.querySelectorAll('.tab-btn').forEach(b=>b.addEventListener('click',()=>{c.querySelectorAll('.tab-btn').forEach(x=>x.classList.remove('active'));b.classList.add('active');c.querySelectorAll('.auth-form').forEach(f=>f.classList.toggle('active',f.id.toLowerCase().includes(b.dataset.tab)))}))}
+setupTabs(screens.auth);setupTabs(screens.household);
+function showAuthError(m){const e=document.getElementById('authError');e.textContent=m;e.classList.remove('hidden')}
+function hideAuthError(){document.getElementById('authError').classList.add('hidden')}
+function showHouseholdError(m){const e=document.getElementById('householdError');e.textContent=m;e.classList.remove('hidden')}
+function hideHouseholdError(){document.getElementById('householdError').classList.add('hidden')}
+document.getElementById('loginForm').addEventListener('submit',async e=>{e.preventDefault();hideAuthError();const b=e.currentTarget.querySelector('[type=submit]');b.disabled=true;try{const{error}=await supabase.auth.signInWithPassword({email:document.getElementById('loginEmail').value.trim(),password:document.getElementById('loginPassword').value});if(error)throw error}catch(x){showAuthError(errText(x))}finally{b.disabled=false}});
+document.getElementById('signupForm').addEventListener('submit',async e=>{e.preventDefault();hideAuthError();const b=e.currentTarget.querySelector('[type=submit]');b.disabled=true;try{const{data,error}=await supabase.auth.signUp({email:document.getElementById('signupEmail').value.trim(),password:document.getElementById('signupPassword').value,options:{data:{full_name:document.getElementById('signupName').value.trim()},emailRedirectTo:location.origin+location.pathname}});if(error)throw error;if(data.session)showToast('Account created. Welcome to BillBuddy!');else showAuthError('Account created. Please check your email and confirm your address, then log in.')}catch(x){showAuthError(errText(x))}finally{b.disabled=false}});
+async function signOut(){const{error}=await supabase.auth.signOut();if(error)showToast(errText(error))}
+document.getElementById('signOutBtnHousehold').addEventListener('click',signOut);document.getElementById('signOutBtn').addEventListener('click',signOut);
+function genCode(){const chars='ABCDEFGHJKLMNPQRSTUVWXYZ23456789',bytes=new Uint8Array(6);crypto.getRandomValues(bytes);return Array.from(bytes,b=>chars[b%chars.length]).join('')}
+document.getElementById('createHouseholdForm').addEventListener('submit',async e=>{e.preventDefault();hideHouseholdError();const b=e.currentTarget.querySelector('[type=submit]');b.disabled=true;try{let id=null;for(let i=0;i<4;i++){const{data,error}=await supabase.rpc('create_household',{p_name:document.getElementById('householdName').value.trim(),p_code:genCode()});if(!error){id=data;break}if(!/duplicate key|unique constraint/i.test(error.message)||i===3)throw error}if(!id)throw Error('Could not create household. Please try again.');await loadHousehold(id)}catch(x){showHouseholdError(errText(x))}finally{b.disabled=false}});
+document.getElementById('joinHouseholdForm').addEventListener('submit',async e=>{e.preventDefault();hideHouseholdError();const b=e.currentTarget.querySelector('[type=submit]');b.disabled=true;try{const{data,error}=await supabase.rpc('join_household',{p_code:document.getElementById('joinCode').value.trim().toUpperCase()});if(error)throw error;await loadHousehold(data)}catch(x){showHouseholdError(errText(x))}finally{b.disabled=false}});
+document.getElementById('codeBtn').addEventListener('click',()=>{if(!currentHouseholdData)return;document.getElementById('codeValue').textContent=currentHouseholdData.invite_code;document.getElementById('codeModal').classList.remove('hidden')});
+document.getElementById('closeCodeModalBtn').addEventListener('click',()=>document.getElementById('codeModal').classList.add('hidden'));
+document.getElementById('copyCodeBtn').addEventListener('click',async()=>{try{await navigator.clipboard.writeText(currentHouseholdData.invite_code);showToast('Code copied to clipboard')}catch{showToast('Could not copy code')}});
+async function getMyHousehold(){const{data:m,error}=await supabase.from('household_members').select('household_id').eq('user_id',currentUser.id).maybeSingle();if(error)throw error;if(!m)return null;return fetchHousehold(m.household_id)}
+async function fetchHousehold(id){const{data,error}=await supabase.from('households').select('id,name,invite_code,owner_id').eq('id',id).single();if(error)throw error;return data}
+async function loadHousehold(id=null){if(billsChannel){await supabase.removeChannel(billsChannel);billsChannel=null}currentHouseholdData=id?await fetchHousehold(id):await getMyHousehold();if(!currentHouseholdData){currentHouseholdId=null;showScreen('household');return}currentHouseholdId=currentHouseholdData.id;document.getElementById('householdNameDisplay').textContent=currentHouseholdData.name;showScreen('app');await fetchBills();subscribeBills();requestNotificationPermission()}
+function fromDb(r){return{id:r.id,name:r.name,amount:Number(r.amount),dueDate:r.due_date,category:r.category,recurring:r.recurring,recurringDay:r.recurring_day,notes:r.notes,status:r.status,paidAt:r.paid_at,createdBy:r.created_by}}
+async function fetchBills(){const{data,error}=await supabase.from('bills').select('*').eq('household_id',currentHouseholdId).order('due_date');if(error)throw error;allBills=(data||[]).map(fromDb);updateBillStatuses();renderBills();renderDashboard();checkReminders()}
+function subscribeBills(){if(billsChannel)supabase.removeChannel(billsChannel);billsChannel=supabase.channel('billbuddy-bills-'+currentHouseholdId).on('postgres_changes',{event:'*',schema:'public',table:'bills',filter:'household_id=eq.'+currentHouseholdId},()=>fetchBills().catch(e=>showToast(errText(e)))).subscribe()}
+function todayISO(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
+function parseLocalDate(s){const[y,m,d]=String(s||'').split('-').map(Number);return y&&m&&d?new Date(y,m-1,d,12):null}
+function daysBetween(s){const a=parseLocalDate(todayISO()),b=parseLocalDate(s);return a&&b?Math.round((b-a)/86400000):0}
+function addMonthsClamped(s,n=1,p=null){const a=parseLocalDate(s)||parseLocalDate(todayISO()),day=Number(p)||a.getDate(),t=new Date(a.getFullYear(),a.getMonth()+n,1,12);t.setDate(Math.min(day,new Date(t.getFullYear(),t.getMonth()+1,0).getDate()));return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0')}
+const money=new Intl.NumberFormat('en-PH',{style:'currency',currency:'PHP',minimumFractionDigits:2});
+function formatMoney(v){return money.format(Number(v||0))}
+function updateBillStatuses(){allBills.forEach(b=>{if(b.status!=='paid')b.status=daysBetween(b.dueDate)<0?'overdue':'pending'})}
+function renderDashboard(){const n=allBills.length,month=todayISO().slice(0,7),expense=allBills.filter(b=>String(b.dueDate).slice(0,7)===month).reduce((s,b)=>s+Number(b.amount||0),0);document.getElementById('statTotal').textContent=n;document.getElementById('statUpcoming').textContent=allBills.filter(b=>b.status==='pending').length;document.getElementById('statOverdue').textContent=allBills.filter(b=>b.status==='overdue').length;document.getElementById('statPaid').textContent=allBills.filter(b=>b.status==='paid').length;document.getElementById('statExpense').textContent=formatMoney(expense)}
+function formatDate(s){const d=parseLocalDate(s);return d?d.toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'}):s}
+function dueLabel(b){if(b.status==='paid')return'Paid';const n=daysBetween(b.dueDate);return n===0?'Due today':n<0?Math.abs(n)+'d overdue':'Due in '+n+'d'}
+function escapeHtml(s){const d=document.createElement('div');d.textContent=s||'';return d.innerHTML}
+function renderBills(){const list=document.getElementById('billsList'),empty=document.getElementById('emptyState'),rows=activeFilter==='all'?allBills:allBills.filter(b=>b.status===activeFilter);list.querySelectorAll('.bill-card').forEach(e=>e.remove());if(!rows.length){empty.classList.remove('hidden');empty.textContent=activeFilter==='all'?'No bills yet. Tap + to add your first bill.':'No '+activeFilter+' bills.';return}empty.classList.add('hidden');rows.forEach((b,i)=>{const card=document.createElement('div');card.className='bill-card status-'+b.status;card.style.setProperty('--stagger-index',Math.min(i,8));card.innerHTML='<div class="bill-card-top"><div><div class="bill-name">'+escapeHtml(b.name)+'</div><div class="bill-category">'+escapeHtml(b.category)+'</div></div><div class="bill-amount">'+formatMoney(b.amount)+'</div></div><div class="bill-card-mid"><span>'+formatDate(b.dueDate)+' · '+dueLabel(b)+'</span><span class="badge '+b.status+'">'+b.status+'</span></div>'+(b.recurring?'<div class="recurring-tag">🔁 Monthly Recurring</div>':'')+(b.notes?'<div class="bill-notes">'+escapeHtml(b.notes)+'</div>':'')+'<div class="bill-card-actions">'+(b.status!=='paid'?'<button class="bill-btn pay" data-id="'+b.id+'">Mark Paid</button>':'')+'<button class="bill-btn edit" data-id="'+b.id+'">Edit</button></div>';list.appendChild(card)});list.querySelectorAll('.bill-btn.pay').forEach(b=>b.addEventListener('click',()=>markPaid(b.dataset.id)));list.querySelectorAll('.bill-btn.edit').forEach(b=>b.addEventListener('click',()=>openEditModal(b.dataset.id)))}
+document.querySelectorAll('.filter-btn').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('.filter-btn').forEach(x=>x.classList.remove('active'));b.classList.add('active');activeFilter=b.dataset.filter;renderBills()}));
+async function markPaid(id){const bill=allBills.find(b=>b.id===id);if(!bill)return;try{const{error}=await supabase.from('bills').update({status:'paid',paid_at:new Date().toISOString()}).eq('id',id).eq('household_id',currentHouseholdId);if(error)throw error;if(bill.recurring){const day=Number(bill.recurringDay)||(parseLocalDate(bill.dueDate)||new Date()).getDate(),next=addMonthsClamped(bill.dueDate,1,day);const{error:e}=await supabase.from('bills').insert({household_id:currentHouseholdId,name:bill.name,amount:bill.amount,due_date:next,category:bill.category,recurring:true,recurring_day:day,notes:bill.notes||'',status:'pending',created_by:currentUser.id});if(e)throw e;showToast(bill.name+' paid. Next bill created for '+formatDate(next)+'.')}else showToast(bill.name+' marked as paid.');await fetchBills()}catch(e){showToast(errText(e))}}
+const billModal=document.getElementById('billModal'),billForm=document.getElementById('billForm');
+document.getElementById('addBillFab').addEventListener('click',openAddModal);document.getElementById('closeModalBtn').addEventListener('click',closeModal);
+function openAddModal(){editingBillId=null;billForm.reset();document.getElementById('modalTitle').textContent='Add Bill';document.getElementById('deleteBillBtn').classList.add('hidden');document.getElementById('billDueDate').value=todayISO();billModal.classList.remove('hidden')}
+function openEditModal(id){const b=allBills.find(x=>x.id===id);if(!b)return;editingBillId=id;document.getElementById('modalTitle').textContent='Edit Bill';document.getElementById('billName').value=b.name;document.getElementById('billAmount').value=b.amount;document.getElementById('billDueDate').value=b.dueDate;document.getElementById('billCategory').value=b.category;document.getElementById('billRecurring').checked=!!b.recurring;document.getElementById('billNotes').value=b.notes||'';document.getElementById('deleteBillBtn').classList.remove('hidden');billModal.classList.remove('hidden')}
+function closeModal(){billModal.classList.add('hidden');editingBillId=null}
+billModal.addEventListener('click',e=>{if(e.target===billModal)closeModal()});
+billForm.addEventListener('submit',async e=>{e.preventDefault();const due=document.getElementById('billDueDate').value,rec=document.getElementById('billRecurring').checked,prev=editingBillId?allBills.find(b=>b.id===editingBillId):null,p={name:document.getElementById('billName').value.trim(),amount:Number.parseFloat(document.getElementById('billAmount').value),due_date:due,category:document.getElementById('billCategory').value,recurring:rec,recurring_day:rec?(Number(prev?.recurringDay)||(parseLocalDate(due)||new Date()).getDate()):null,notes:document.getElementById('billNotes').value.trim()},button=billForm.querySelector('[type=submit]');button.disabled=true;try{let q;if(editingBillId)q=await supabase.from('bills').update(p).eq('id',editingBillId).eq('household_id',currentHouseholdId);else q=await supabase.from('bills').insert({...p,household_id:currentHouseholdId,status:daysBetween(due)<0?'overdue':'pending',created_by:currentUser.id});if(q.error)throw q.error;showToast(editingBillId?'Bill updated.':'Bill added.');closeModal();await fetchBills()}catch(x){showToast(errText(x))}finally{button.disabled=false}});
+document.getElementById('deleteBillBtn').addEventListener('click',async()=>{if(!editingBillId||!confirm('Delete this bill?'))return;try{const{error}=await supabase.from('bills').delete().eq('id',editingBillId).eq('household_id',currentHouseholdId);if(error)throw error;showToast('Bill deleted.');closeModal();await fetchBills()}catch(e){showToast(errText(e))}});
+async function requestNotificationPermission(){if('Notification'in window&&Notification.permission==='default'){try{await Notification.requestPermission()}catch{}}}
+let lastReminderCheckDate=null;
+function checkReminders(){const today=todayISO();if(lastReminderCheckDate===today)return;lastReminderCheckDate=today;const soon=[],late=[];allBills.forEach(b=>{if(b.status==='paid')return;const d=daysBetween(b.dueDate);if([7,3,1,0].includes(d))soon.push({b,d});if(d<0)late.push(b)});if(!soon.length&&!late.length)return;const notify='Notification'in window&&Notification.permission==='granted';soon.forEach(({b,d})=>{const body=d===0?b.name+' is due today ('+formatMoney(b.amount)+')':b.name+' is due in '+d+' day(s) ('+formatMoney(b.amount)+')';if(notify)new Notification('BillBuddy Reminder',{body})});late.forEach(b=>{if(notify)new Notification('BillBuddy Overdue',{body:b.name+' is overdue ('+formatMoney(b.amount)+')'})});if(!notify)showToast('📌 '+(soon.length+late.length)+' bill(s) need attention',5000)}
+function updateOfflineBadge(){const b=document.getElementById('offlineBadge');b.textContent=navigator.onLine?'':'Offline — cached viewing only. Changes need an internet connection.';b.classList.toggle('hidden',navigator.onLine)}
+window.addEventListener('online',updateOfflineBadge);window.addEventListener('offline',updateOfflineBadge);updateOfflineBadge();
+async function handleSession(session){currentUser=session?.user||null;if(!currentUser){currentHouseholdId=null;currentHouseholdData=null;allBills=[];if(billsChannel){await supabase.removeChannel(billsChannel);billsChannel=null}showScreen('auth');return}try{const{error}=await supabase.from('profiles').upsert({id:currentUser.id,full_name:currentUser.user_metadata?.full_name||'',email:currentUser.email||''},{onConflict:'id',ignoreDuplicates:true});if(error)throw error;await loadHousehold()}catch(e){showScreen('auth');showAuthError('Could not load your BillBuddy account: '+errText(e));console.error(e)}}
+supabase.auth.getSession().then(({data,error})=>{if(error)showAuthError(errText(error));return handleSession(data?.session||null)}).catch(e=>{showScreen('auth');showAuthError('Could not connect to BillBuddy. Check your internet connection and refresh.');console.error(e)});
+supabase.auth.onAuthStateChange((_event,session)=>{setTimeout(()=>handleSession(session),0)});
+setInterval(()=>{if(allBills.length){updateBillStatuses();renderBills();renderDashboard();checkReminders()}},60*60*1000);
+if('serviceWorker'in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(e=>console.error('Service worker registration failed',e)));
