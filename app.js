@@ -25,7 +25,60 @@ document.getElementById('closeCodeModalBtn').addEventListener('click',()=>docume
 document.getElementById('copyCodeBtn').addEventListener('click',async()=>{try{await navigator.clipboard.writeText(currentHouseholdData.invite_code);showToast('Code copied to clipboard')}catch{showToast('Could not copy code')}});
 async function getMyHousehold(){const{data:m,error}=await supabase.from('household_members').select('household_id').eq('user_id',currentUser.id).maybeSingle();if(error)throw error;if(!m)return null;return fetchHousehold(m.household_id)}
 async function fetchHousehold(id){const{data,error}=await supabase.from('households').select('id,name,invite_code,owner_id').eq('id',id).single();if(error)throw error;return data}
-async function loadHousehold(id=null){if(billsChannel){await supabase.removeChannel(billsChannel);billsChannel=null}currentHouseholdData=id?await fetchHousehold(id):await getMyHousehold();if(!currentHouseholdData){currentHouseholdId=null;showScreen('household');return}currentHouseholdId=currentHouseholdData.id;document.getElementById('householdNameDisplay').textContent=currentHouseholdData.name;showScreen('app');await fetchBills();subscribeBills();requestNotificationPermission()}
+
+async function fetchGmailRequests(){
+  const list=document.getElementById('gmailRequestsList');
+  const {data,error}=await supabase.from('gmail_connection_requests')
+    .select('id,gmail_address,status,created_at,requested_by,reviewed_at')
+    .eq('household_id',currentHouseholdId).order('created_at',{ascending:false});
+  if(error)throw error;
+  renderGmailRequests(data||[]);
+}
+function renderGmailRequests(rows){
+  const list=document.getElementById('gmailRequestsList');
+  const active=rows.find(r=>['pending','approved','connected'].includes(r.status));
+  const status=document.getElementById('gmailInboxStatus');
+  status.textContent=active?.status==='connected'?'Connected':active?.status==='approved'?'Approved · authorization needed':active?.status==='pending'?'Awaiting owner approval':'Not connected';
+  const form=document.getElementById('gmailRequestForm');
+  const hasActive=!!active;
+  form.classList.toggle('hidden',hasActive);
+  if(!rows.length){list.innerHTML='<p class="inbox-empty">No Gmail connection requests yet.</p>';return}
+  list.innerHTML=rows.map(r=>{
+    const owner=currentHouseholdData?.owner_id===currentUser?.id;
+    const actions=owner&&r.status==='pending'
+      ?'<div class="gmail-request-actions"><button class="bill-btn pay" data-gmail-action="approved" data-id="'+r.id+'">Approve</button><button class="bill-btn edit" data-gmail-action="rejected" data-id="'+r.id+'">Decline</button></div>'
+      :'';
+    const label=r.status==='pending'?'Waiting for owner':r.status==='approved'?'Approved · Gmail owner authorization required':r.status==='connected'?'Connected':r.status==='rejected'?'Declined':'Cancelled';
+    return '<article class="gmail-request-card"><div class="gmail-request-info"><strong>'+escapeHtml(r.gmail_address)+'</strong><span class="gmail-request-state state-'+r.status+'">'+label+'</span></div>'+actions+'</article>';
+  }).join('');
+  list.querySelectorAll('[data-gmail-action]').forEach(button=>button.addEventListener('click',async()=>{
+    button.disabled=true;
+    try{
+      const{error}=await supabase.rpc('review_gmail_connection_request',{p_request_id:button.dataset.id,p_decision:button.dataset.gmailAction});
+      if(error)throw error;
+      showToast(button.dataset.gmailAction==='approved'?'Request approved. Gmail authorization is the next step.':'Request declined.');
+      await fetchGmailRequests();
+    }catch(e){showToast(errText(e));button.disabled=false}
+  }));
+}
+document.getElementById('gmailRequestForm').addEventListener('submit',async e=>{
+  e.preventDefault();
+  const button=document.getElementById('gmailRequestSubmit');
+  const address=document.getElementById('gmailRequestAddress').value.trim().toLowerCase();
+  button.disabled=true;
+  try{
+    const{error}=await supabase.from('gmail_connection_requests').insert({
+      household_id:currentHouseholdId,requested_by:currentUser.id,gmail_address:address,status:'pending'
+    });
+    if(error)throw error;
+    document.getElementById('gmailRequestAddress').value='';
+    showToast('Gmail access request sent to the household owner.');
+    await fetchGmailRequests();
+  }catch(e){showToast(errText(e))}
+  finally{button.disabled=false}
+});
+document.getElementById('refreshGmailRequests').addEventListener('click',()=>fetchGmailRequests().catch(e=>showToast(errText(e))));
+\nasync function loadHousehold(id=null){if(billsChannel){await supabase.removeChannel(billsChannel);billsChannel=null}currentHouseholdData=id?await fetchHousehold(id):await getMyHousehold();if(!currentHouseholdData){currentHouseholdId=null;showScreen('household');return}currentHouseholdId=currentHouseholdData.id;document.getElementById('householdNameDisplay').textContent=currentHouseholdData.name;showScreen('app');await fetchBills();subscribeBills();await fetchGmailRequests();requestNotificationPermission()}
 function fromDb(r){return{id:r.id,name:r.name,amount:Number(r.amount),dueDate:r.due_date,category:r.category,recurring:r.recurring,recurringDay:r.recurring_day,notes:r.notes,status:r.status,paidAt:r.paid_at,createdBy:r.created_by}}
 async function fetchBills(){const{data,error}=await supabase.from('bills').select('*').eq('household_id',currentHouseholdId).order('due_date');if(error)throw error;allBills=(data||[]).map(fromDb);updateBillStatuses();renderBills();renderDashboard();checkReminders()}
 function subscribeBills(){if(billsChannel)supabase.removeChannel(billsChannel);billsChannel=supabase.channel('billbuddy-bills-'+currentHouseholdId).on('postgres_changes',{event:'*',schema:'public',table:'bills',filter:'household_id=eq.'+currentHouseholdId},()=>fetchBills().catch(e=>showToast(errText(e)))).subscribe()}
