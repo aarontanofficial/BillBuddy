@@ -788,3 +788,28 @@ body { background: #f4f7f8; color: var(--text); }
 .btn-google:hover{border-color:#c8d4d8;box-shadow:0 6px 18px rgba(20,40,48,.08);transform:translateY(-1px)}
 .btn-google:disabled{opacity:.65;cursor:wait}
 .google-mark{font-family:Arial,sans-serif;font-size:20px;font-weight:800;color:#4285f4}
+
+/* Household Gmail request panel */
+.inbox-panel{background:#fff;border:1px solid #e5edef;border-radius:19px;padding:22px;margin:0 0 30px;box-shadow:0 5px 20px rgba(27,55,64,.04)}
+.inbox-panel-heading,.inbox-requests-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.inbox-panel-heading h2{font-size:21px;color:#1c3942;letter-spacing:-.5px}
+.inbox-status{font-size:10px;font-weight:800;letter-spacing:.3px;color:#7b8b92;background:#f1f5f5;border-radius:30px;padding:7px 11px;text-align:center}
+.inbox-copy{font-size:13px;line-height:1.6;color:#7b8c92;margin:10px 0 18px;max-width:760px}
+.gmail-request-form{padding:16px;background:#f7faf9;border:1px solid #e8efed;border-radius:14px}
+.gmail-request-form label{display:block;font-size:12px;font-weight:800;color:#526970;margin-bottom:8px}
+.gmail-request-row{display:flex;gap:9px}
+.gmail-request-row input{min-width:0;flex:1;padding:12px 13px;border:1px solid #dce7e5;border-radius:10px;background:#fff;outline:none}
+.gmail-request-row input:focus{border-color:#0c9284}
+.gmail-request-row .btn-primary{white-space:nowrap;padding:0 16px}
+.inbox-hint{font-size:11px;line-height:1.5;color:#8a999e;margin-top:9px}
+.inbox-requests-heading{margin:19px 0 10px;font-size:13px;color:#304b53}
+.gmail-requests-list{display:flex;flex-direction:column;gap:8px}
+.inbox-empty{font-size:12px;color:#9aa7ab;padding:12px 2px}
+.gmail-request-card{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 14px;border:1px solid #e8eef0;border-radius:12px}
+.gmail-request-info{display:flex;flex-direction:column;gap:5px;min-width:0}
+.gmail-request-info strong{font-size:13px;color:#28434b;overflow-wrap:anywhere}
+.gmail-request-state{font-size:10px;color:#849398}
+.gmail-request-state.state-approved{color:#a16d20}.gmail-request-state.state-connected{color:#13845f}.gmail-request-state.state-rejected{color:#bd5258}
+.gmail-request-actions{display:flex;gap:7px;flex-shrink:0}
+.gmail-request-actions .bill-btn{flex:initial;padding:8px 12px}
+@media(max-width:600px){.inbox-panel{padding:17px}.gmail-request-row{flex-direction:column}.gmail-request-row .btn-primary{min-height:44px}.gmail-request-card{align-items:flex-start;flex-direction:column}.gmail-request-actions{width:100%}.gmail-request-actions .bill-btn{flex:1}}
