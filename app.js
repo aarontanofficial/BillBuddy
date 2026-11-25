@@ -289,9 +289,10 @@ function renderBills() {
   }
   emptyState.classList.add('hidden');
 
-  filtered.forEach(bill => {
+  filtered.forEach((bill, index) => {
     const card = document.createElement('div');
     card.className = `bill-card status-${bill.status}`;
+    card.style.setProperty('--stagger-index', Math.min(index, 8));
     card.innerHTML = `
       <div class="bill-card-top">
         <div>
