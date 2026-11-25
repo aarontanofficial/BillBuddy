@@ -1,4 +1,4 @@
-const CACHE_NAME = 'billbuddy-cache-v2';
+const CACHE_NAME = 'billbuddy-cache-v3';
 const APP_SHELL = [
   './',
   './index.html',
@@ -27,8 +27,8 @@ self.addEventListener('fetch', event => {
   const request = event.request;
   if (request.method !== 'GET') return;
   const url = new URL(request.url);
-  // Firebase APIs and SDKs remain network-managed; do not cache private data.
-  if (url.hostname.includes('googleapis.com') || url.hostname.includes('firebaseio.com') || url.hostname.includes('gstatic.com')) return;
+  // Supabase APIs and third-party SDKs remain network-managed; do not cache private data.
+  if (url.hostname.endsWith('supabase.co') || url.hostname.includes('googleapis.com') || url.hostname.includes('gstatic.com')) return;
   if (url.origin !== self.location.origin) return;
 
   event.respondWith((async () => {
