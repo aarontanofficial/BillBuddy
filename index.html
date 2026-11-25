@@ -117,7 +117,26 @@
       </div>
     </section>
 
-    <section class="bills-heading">
+
+    <section class="inbox-panel" aria-labelledby="inboxTitle">
+      <div class="inbox-panel-heading">
+        <div><p class="eyebrow">HOUSEHOLD AUTOMATION</p><h2 id="inboxTitle">Billing inbox</h2></div>
+        <span class="inbox-status" id="gmailInboxStatus">Not connected</span>
+      </div>
+      <p class="inbox-copy">Connect one Gmail inbox to help BillBuddy find household utility statements and payment confirmations. The Gmail owner must authorize access separately.</p>
+      <form id="gmailRequestForm" class="gmail-request-form">
+        <label for="gmailRequestAddress">Gmail address to monitor</label>
+        <div class="gmail-request-row">
+          <input type="email" id="gmailRequestAddress" placeholder="name@gmail.com" autocomplete="email" required>
+          <button type="submit" class="btn-primary" id="gmailRequestSubmit">Request access</button>
+        </div>
+        <p class="inbox-hint">Any household member can request an inbox. The household owner reviews the request before the mailbox owner authorizes it.</p>
+      </form>
+      <div class="inbox-requests-heading"><strong>Connection requests</strong><button type="button" class="btn-text" id="refreshGmailRequests">Refresh</button></div>
+      <div id="gmailRequestsList" class="gmail-requests-list"><p class="inbox-empty">Loading requests…</p></div>
+      <p id="gmailRequestMessage" class="inbox-hint hidden"></p>
+    </section>
+\n    <section class="bills-heading">
       <div>
         <p class="eyebrow">PAYMENTS</p>
         <h2>Your bills</h2>
