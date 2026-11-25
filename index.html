@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#4f46e5">
-<title>BillBuddy</title>
+<meta name="theme-color" content="#0f766e">
+<title>BillBuddy — Household Bills</title>
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="data:,">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
@@ -15,7 +15,7 @@
 </head>
 <body>
 
-<div id="offlineBadge" class="offline-badge hidden">Offline — changes will sync later</div>
+<div id="offlineBadge" class="offline-badge hidden">Offline — cached viewing only. Changes need an internet connection.</div>
 
 <div id="authScreen" class="screen">
   <div class="auth-card">
@@ -101,7 +101,7 @@
         <span class="stat-label">Paid</span>
       </div>
       <div class="stat-card expense full-width">
-        <span class="stat-value" id="statExpense">$0.00</span>
+        <span class="stat-value" id="statExpense">₱0.00</span>
         <span class="stat-label">Total Monthly Expenses</span>
       </div>
     </section>
