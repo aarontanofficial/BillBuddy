@@ -191,17 +191,43 @@ function listenToBills() {
     });
 }
 
+// Work with calendar dates in the device's local timezone. Avoid UTC ISO
+// conversion, which can shift Philippine dates to the previous day.
 function todayISO() {
   const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d.toISOString().slice(0, 10);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function parseLocalDate(dateStr) {
+  const [year, month, day] = String(dateStr || '').split('-').map(Number);
+  if (!year || !month || !day) return null;
+  return new Date(year, month - 1, day, 12, 0, 0, 0);
 }
 
 function daysBetween(dateStr) {
-  const today = new Date(todayISO());
-  const due = new Date(dateStr);
-  due.setHours(0, 0, 0, 0);
+  const today = parseLocalDate(todayISO());
+  const due = parseLocalDate(dateStr);
+  if (!today || !due) return 0;
   return Math.round((due - today) / 86400000);
+}
+
+function addMonthsClamped(dateStr, months = 1) {
+  const source = parseLocalDate(dateStr) || parseLocalDate(todayISO());
+  const targetMonth = source.getMonth() + months;
+  const target = new Date(source.getFullYear(), targetMonth, 1, 12);
+  const lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
+  target.setDate(Math.min(source.getDate(), lastDay));
+  return `${target.getFullYear()}-${String(target.getMonth() + 1).padStart(2, '0')}-${String(target.getDate()).padStart(2, '0')}`;
+}
+
+const moneyFormatter = new Intl.NumberFormat('en-PH', {
+  style: 'currency', currency: 'PHP', minimumFractionDigits: 2
+});
+function formatMoney(value) {
+  return moneyFormatter.format(Number(value || 0));
 }
 
 function updateBillStatuses() {
@@ -218,20 +244,21 @@ function renderDashboard() {
   const upcoming = allBills.filter(b => b.status === 'pending').length;
   const overdue = allBills.filter(b => b.status === 'overdue').length;
   const paid = allBills.filter(b => b.status === 'paid').length;
+  const monthKey = todayISO().slice(0, 7);
   const expense = allBills
-    .filter(b => b.status !== 'paid')
+    .filter(b => String(b.dueDate || '').slice(0, 7) === monthKey)
     .reduce((sum, b) => sum + Number(b.amount || 0), 0);
 
   document.getElementById('statTotal').textContent = total;
   document.getElementById('statUpcoming').textContent = upcoming;
   document.getElementById('statOverdue').textContent = overdue;
   document.getElementById('statPaid').textContent = paid;
-  document.getElementById('statExpense').textContent = `$${expense.toFixed(2)}`;
+  document.getElementById('statExpense').textContent = formatMoney(expense);
 }
 
 function formatDate(dateStr) {
   const d = new Date(dateStr);
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  return d.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
 function dueLabel(bill) {
@@ -270,7 +297,7 @@ function renderBills() {
           <div class="bill-name">${escapeHtml(bill.name)}</div>
           <div class="bill-category">${escapeHtml(bill.category)}</div>
         </div>
-        <div class="bill-amount">$${Number(bill.amount).toFixed(2)}</div>
+        <div class="bill-amount">${formatMoney(bill.amount)}</div>
       </div>
       <div class="bill-card-mid">
         <span>${formatDate(bill.dueDate)} · ${dueLabel(bill)}</span>
@@ -319,12 +346,11 @@ async function markPaid(billId) {
   });
 
   if (bill.recurring) {
-    const nextDate = new Date(bill.dueDate);
-    nextDate.setMonth(nextDate.getMonth() + 1);
+    const nextDate = addMonthsClamped(bill.dueDate, 1);
     await db.collection('households').doc(currentHouseholdId).collection('bills').add({
       name: bill.name,
       amount: bill.amount,
-      dueDate: nextDate.toISOString().slice(0, 10),
+      dueDate: nextDate,
       category: bill.category,
       recurring: true,
       notes: bill.notes || '',
@@ -332,7 +358,7 @@ async function markPaid(billId) {
       createdBy: currentUser.uid,
       createdAt: firebase.firestore.FieldValue.serverTimestamp()
     });
-    showToast(`${bill.name} paid. Next bill created for ${formatDate(nextDate.toISOString().slice(0, 10))}.`);
+    showToast(`${bill.name} paid. Next bill created for ${formatDate(nextDate)}.`);
   } else {
     showToast(`${bill.name} marked as paid.`);
   }
@@ -441,15 +467,15 @@ function checkReminders() {
 
   dueSoon.forEach(({ bill, diff }) => {
     const text = diff === 0
-      ? `${bill.name} is due today ($${Number(bill.amount).toFixed(2)})`
-      : `${bill.name} is due in ${diff} day${diff > 1 ? 's' : ''} ($${Number(bill.amount).toFixed(2)})`;
+      ? `${bill.name} is due today (${formatMoney(bill.amount)})`
+      : `${bill.name} is due in ${diff} day${diff > 1 ? 's' : ''} (${formatMoney(bill.amount)})`;
     if (canNotify) {
       new Notification('BillBuddy Reminder', { body: text, icon: 'icons/icon-192.png' });
     }
   });
 
   overdue.forEach(bill => {
-    const text = `${bill.name} is overdue ($${Number(bill.amount).toFixed(2)})`;
+    const text = `${bill.name} is overdue (${formatMoney(bill.amount)})`;
     if (canNotify) {
       new Notification('BillBuddy Overdue', { body: text, icon: 'icons/icon-192.png' });
     }
@@ -462,7 +488,9 @@ function checkReminders() {
 }
 
 function updateOfflineBadge() {
-  document.getElementById('offlineBadge').classList.toggle('hidden', navigator.onLine);
+  const badge = document.getElementById('offlineBadge');
+  badge.textContent = navigator.onLine ? '' : 'Offline — cached viewing only. Changes need an internet connection.';
+  badge.classList.toggle('hidden', navigator.onLine);
 }
 
 window.addEventListener('online', updateOfflineBadge);
