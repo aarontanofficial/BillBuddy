@@ -214,12 +214,13 @@ function daysBetween(dateStr) {
   return Math.round((due - today) / 86400000);
 }
 
-function addMonthsClamped(dateStr, months = 1) {
+function addMonthsClamped(dateStr, months = 1, preferredDay = null) {
   const source = parseLocalDate(dateStr) || parseLocalDate(todayISO());
+  const desiredDay = Number(preferredDay) || source.getDate();
   const targetMonth = source.getMonth() + months;
   const target = new Date(source.getFullYear(), targetMonth, 1, 12);
   const lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
-  target.setDate(Math.min(source.getDate(), lastDay));
+  target.setDate(Math.min(desiredDay, lastDay));
   return `${target.getFullYear()}-${String(target.getMonth() + 1).padStart(2, '0')}-${String(target.getDate()).padStart(2, '0')}`;
 }
 
@@ -346,13 +347,15 @@ async function markPaid(billId) {
   });
 
   if (bill.recurring) {
-    const nextDate = addMonthsClamped(bill.dueDate, 1);
+    const recurringDay = Number(bill.recurringDay) || (parseLocalDate(bill.dueDate) || new Date()).getDate();
+    const nextDate = addMonthsClamped(bill.dueDate, 1, recurringDay);
     await db.collection('households').doc(currentHouseholdId).collection('bills').add({
       name: bill.name,
       amount: bill.amount,
       dueDate: nextDate,
       category: bill.category,
       recurring: true,
+      recurringDay,
       notes: bill.notes || '',
       status: 'pending',
       createdBy: currentUser.uid,
@@ -411,6 +414,7 @@ billForm.addEventListener('submit', async (e) => {
     dueDate: document.getElementById('billDueDate').value,
     category: document.getElementById('billCategory').value,
     recurring: document.getElementById('billRecurring').checked,
+    recurringDay: document.getElementById('billRecurring').checked ? (editingBillId ? (allBills.find(b => b.id === editingBillId)?.recurringDay || (parseLocalDate(document.getElementById('billDueDate').value) || new Date()).getDate()) : (parseLocalDate(document.getElementById('billDueDate').value) || new Date()).getDate()) : null,
     notes: document.getElementById('billNotes').value.trim()
   };
 
