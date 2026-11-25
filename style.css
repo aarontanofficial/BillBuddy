@@ -581,3 +581,52 @@ input, select, textarea {
   .bill-card, .stat-card, .auth-card { transition: box-shadow .18s ease, transform .18s ease; }
   .bill-card:hover, .stat-card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(15,45,42,.08); }
 }
+
+
+/* BillBuddy motion system — smooth, responsive, and reduced-motion aware */
+:root {
+  --motion-fast: 160ms;
+  --motion-medium: 260ms;
+  --motion-slow: 420ms;
+  --motion-ease: cubic-bezier(.2,.75,.25,1);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .screen:not(.hidden) { animation: screenFadeIn var(--motion-medium) var(--motion-ease) both; }
+  .screen:not(.hidden) .auth-card { animation: authCardEnter 520ms var(--motion-ease) both; }
+  .auth-form.active { animation: formEnter 240ms var(--motion-ease) both; }
+  .tab-btn, .filter-btn, .icon-btn, .bill-btn, .btn-primary, .btn-danger, .fab {
+    transition: transform var(--motion-fast) var(--motion-ease), background-color var(--motion-fast) ease,
+      color var(--motion-fast) ease, box-shadow var(--motion-medium) var(--motion-ease),
+      border-color var(--motion-fast) ease;
+  }
+  .tab-btn:active, .filter-btn:active, .icon-btn:active, .bill-btn:active,
+  .btn-primary:active, .btn-danger:active { transform: scale(.96); }
+  .tab-btn.active, .filter-btn.active { animation: selectionPop 220ms var(--motion-ease) both; }
+  .stat-card { animation: cardEnter 460ms var(--motion-ease) both; }
+  .stat-card:nth-child(2) { animation-delay: 45ms; }
+  .stat-card:nth-child(3) { animation-delay: 90ms; }
+  .stat-card:nth-child(4) { animation-delay: 135ms; }
+  .stat-card:nth-child(5) { animation-delay: 180ms; }
+  .bill-card { animation: cardEnter 360ms var(--motion-ease) both; animation-delay: calc(var(--stagger-index, 0) * 45ms); }
+  .bill-card:hover { transform: translateY(-3px); }
+  .fab { animation: fabEnter 500ms 160ms var(--motion-ease) both; }
+  .fab:hover { transform: translateY(-3px) scale(1.04); box-shadow: 0 10px 26px rgba(15,118,110,.32); }
+  .modal-overlay:not(.hidden) { animation: overlayIn 180ms ease both; }
+  .modal-overlay:not(.hidden) .modal { animation: sheetEnter 340ms var(--motion-ease) both; }
+  .toast:not(.hidden) { animation: toastEnter 260ms var(--motion-ease) both; }
+  .empty-state:not(.hidden) { animation: formEnter 300ms var(--motion-ease) both; }
+  .bill-card .badge { transition: transform 220ms var(--motion-ease); }
+  .bill-card:hover .badge { transform: translateY(-1px); }
+}
+@keyframes screenFadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes authCardEnter { from { opacity: 0; transform: translateY(18px) scale(.985); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes formEnter { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes cardEnter { from { opacity: 0; transform: translateY(12px) scale(.99); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes selectionPop { 0% { transform: scale(.96); } 65% { transform: scale(1.025); } 100% { transform: scale(1); } }
+@keyframes fabEnter { from { opacity: 0; transform: translateY(14px) scale(.88); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes overlayIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes sheetEnter { from { opacity: .7; transform: translateY(28px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes toastEnter { from { opacity: 0; transform: translate(-50%, 12px) scale(.97); } to { opacity: 1; transform: translate(-50%, 0) scale(1); } }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
