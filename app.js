@@ -501,28 +501,39 @@ window.addEventListener('online', updateOfflineBadge);
 window.addEventListener('offline', updateOfflineBadge);
 updateOfflineBadge();
 
-auth.onAuthStateChanged(async (user) => {
-  if (user) {
-    currentUser = user;
-    const userDoc = await db.collection('users').doc(user.uid).get();
-    const userData = userDoc.data();
-    if (userData && userData.householdId) {
-      currentHouseholdId = userData.householdId;
-      await loadHousehold();
+if (typeof auth === 'undefined' || typeof db === 'undefined') {
+  showScreen('auth');
+  showAuthError('Firebase is not configured yet. The repository is missing firebase.js. Add your existing Firebase web configuration to restore sign-in and household data. Your saved cloud data has not been changed.');
+} else {
+  auth.onAuthStateChanged(async (user) => {
+    if (user) {
+      currentUser = user;
+      try {
+        const userDoc = await db.collection('users').doc(user.uid).get();
+        const userData = userDoc.data();
+        if (userData && userData.householdId) {
+          currentHouseholdId = userData.householdId;
+          await loadHousehold();
+        } else {
+          showScreen('household');
+        }
+      } catch (err) {
+        showScreen('auth');
+        showAuthError('Could not load your account. Check your internet connection and Firestore access, then try again.');
+        console.error('Account load failed', err);
+      }
     } else {
-      showScreen('household');
+      currentUser = null;
+      currentHouseholdId = null;
+      currentHouseholdData = null;
+      if (billsUnsubscribe) {
+        billsUnsubscribe();
+        billsUnsubscribe = null;
+      }
+      showScreen('auth');
     }
-  } else {
-    currentUser = null;
-    currentHouseholdId = null;
-    currentHouseholdData = null;
-    if (billsUnsubscribe) {
-      billsUnsubscribe();
-      billsUnsubscribe = null;
-    }
-    showScreen('auth');
-  }
-});
+  });
+}
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
