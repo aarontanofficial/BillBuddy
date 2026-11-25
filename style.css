@@ -779,3 +779,12 @@ body { background: #f4f7f8; color: var(--text); }
   .bill-card { padding: 15px; }
   .fab { right: 19px; bottom: max(22px,env(safe-area-inset-bottom)); }
 }
+
+
+/* Google sign-in */
+.auth-divider{display:flex;align-items:center;gap:12px;margin:18px 0 14px;color:#98a6aa;font-size:10px;font-weight:800;letter-spacing:1.4px}
+.auth-divider::before,.auth-divider::after{content:"";height:1px;flex:1;background:var(--border)}
+.btn-google{width:100%;min-height:48px;display:flex;align-items:center;justify-content:center;gap:11px;padding:11px 16px;border:1px solid #dfe5e8;border-radius:11px;background:#fff;color:#25343b;font-size:14px;font-weight:700;box-shadow:0 2px 7px rgba(20,40,48,.04);transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}
+.btn-google:hover{border-color:#c8d4d8;box-shadow:0 6px 18px rgba(20,40,48,.08);transform:translateY(-1px)}
+.btn-google:disabled{opacity:.65;cursor:wait}
+.google-mark{font-family:Arial,sans-serif;font-size:20px;font-weight:800;color:#4285f4}
