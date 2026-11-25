@@ -83,6 +83,15 @@
   </header>
 
   <main class="main-content">
+    <section class="welcome-row">
+      <div>
+        <p class="eyebrow">HOUSEHOLD OVERVIEW</p>
+        <h2 class="welcome-title">Your finances, <span>in one place.</span></h2>
+        <p class="welcome-copy">Stay on top of what’s due and what’s already taken care of.</p>
+      </div>
+      <div class="overview-mark" aria-hidden="true">₱</div>
+    </section>
+
     <section class="dashboard">
       <div class="stat-card">
         <span class="stat-value" id="statTotal">0</span>
@@ -106,7 +115,15 @@
       </div>
     </section>
 
-    <section class="filters">
+    <section class="bills-heading">
+      <div>
+        <p class="eyebrow">PAYMENTS</p>
+        <h2>Your bills</h2>
+      </div>
+      <span class="bills-heading-note">Track every due date</span>
+    </section>
+
+    <section class="filters" aria-label="Filter bills">
       <button class="filter-btn active" data-filter="all">All</button>
       <button class="filter-btn" data-filter="pending">Pending</button>
       <button class="filter-btn" data-filter="overdue">Overdue</button>
